@@ -7,6 +7,7 @@ import { createUi } from './ui.js';
 
 const ui = createUi();
 let currentDocument = null;
+let currentExtractionWarning = '';
 let extractionController = null;
 let elapsedTimer = null;
 let processingStartedAt = 0;
@@ -17,7 +18,9 @@ const pipeline = new RecursiveSummaryPipeline({
   onProgress: (progress) => ui.setProgress(progress),
   onLevelComplete: (level) => ui.addLevel(level),
   onAttempt: (info) => ui.setAttempt(info),
+  onFinalPass: (info) => ui.setFinalPass(info),
   onModelDownload: (loaded) => ui.setModelDownload(loaded),
+  onLogAvailability: (available) => ui.setLogAvailable(available),
 });
 
 initialize();
@@ -64,11 +67,18 @@ function wireEvents() {
 
   els.startButton.addEventListener('click', startSummary);
   els.cancelButton.addEventListener('click', () => {
-    pipeline.cancel();
+    pipeline.abort();
     stopElapsedTimer();
     ui.endProcessing();
     ui.setStage('中止しました');
-    ui.els.progressDetail.textContent = '処理はユーザー操作で中止されました。';
+    ui.els.progressDetail.textContent = '処理はユーザー操作で中止されました。診断ログは保存できます。';
+  });
+  els.saveLogButton.addEventListener('click', () => {
+    try {
+      pipeline.saveDiagnosticLog();
+    } catch (error) {
+      ui.showError(friendlyError(error));
+    }
   });
   els.changeFileButton.addEventListener('click', resetDocument);
   els.copyButton.addEventListener('click', async () => {
@@ -81,10 +91,11 @@ function wireEvents() {
   els.clearDataButton.addEventListener('click', () => els.clearDataDialog.showModal());
   els.clearDataDialog.addEventListener('close', async () => {
     if (els.clearDataDialog.returnValue !== 'confirm') return;
-    pipeline.cancel();
+    pipeline.reset();
     extractionController?.abort();
     stopElapsedTimer();
     currentDocument = null;
+    currentExtractionWarning = '';
     await clearSiteData();
     ui.reset();
     await refreshStorageUsage();
@@ -92,10 +103,11 @@ function wireEvents() {
 }
 
 async function loadFile(file) {
-  pipeline.cancel();
+  pipeline.reset();
   extractionController?.abort();
   extractionController = new AbortController();
   currentDocument = null;
+  currentExtractionWarning = '';
   ui.showExtracting(file);
 
   try {
@@ -104,8 +116,8 @@ async function loadFile(file) {
       onProgress: ({ pageNumber, pageCount }) => ui.updateExtractionProgress(pageNumber, pageCount),
     });
     currentDocument = documentData;
-    const warning = getExtractionWarning(documentData);
-    ui.showDocument(documentData, warning);
+    currentExtractionWarning = getExtractionWarning(documentData);
+    ui.showDocument(documentData, currentExtractionWarning);
   } catch (error) {
     if (error?.name === 'AbortError') return;
     ui.showDocument({
@@ -138,7 +150,7 @@ async function startSummary() {
   startElapsedTimer();
 
   try {
-    const result = await pipeline.run(currentDocument);
+    const result = await pipeline.run(currentDocument, { extractionWarning: currentExtractionWarning });
     stopElapsedTimer();
     ui.setElapsed(result.elapsedMs);
     ui.showResult(result);
@@ -146,7 +158,7 @@ async function startSummary() {
     stopElapsedTimer();
     if (error?.name === 'AbortError') {
       ui.setStage('中止しました');
-      ui.els.progressDetail.textContent = '処理は中止されました。';
+      ui.els.progressDetail.textContent = '処理は中止されました。診断ログは保存できます。';
     } else {
       console.error(error);
       ui.showError(friendlyError(error));
@@ -158,16 +170,17 @@ async function startSummary() {
 }
 
 function resetDocument() {
-  pipeline.cancel();
+  pipeline.reset();
   extractionController?.abort();
   stopElapsedTimer();
   currentDocument = null;
+  currentExtractionWarning = '';
   ui.reset();
 }
 
 function getExtractionWarning(documentData) {
   if (documentData.charCount === 0) {
-    return 'このPDFからテキストを抽出できませんでした。画像として保存されたスキャンPDFの可能性があります。v0.1ではOCRに対応していません。';
+    return 'このPDFからテキストを抽出できませんでした。画像として保存されたスキャンPDFの可能性があります。v0.2ではOCRに対応していません。';
   }
   const average = documentData.charCount / Math.max(documentData.pageCount, 1);
   if (average < PIPELINE_CONFIG.suspiciousCharsPerPage) {

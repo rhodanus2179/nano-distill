@@ -52,12 +52,70 @@ export function splitLongSegment(text, maxChars) {
   return pieces.filter(Boolean);
 }
 
-function hardSplit(text, maxChars) {
-  const chunks = [];
-  for (let offset = 0; offset < text.length; offset += maxChars) {
-    chunks.push(text.slice(offset, offset + maxChars).trim());
+export function createDocumentChunks(pages, maxChars, overlapChars = 0) {
+  const atoms = [];
+  for (const page of pages) {
+    const pieces = splitLongSegment(page.text, maxChars);
+    for (const piece of pieces) {
+      atoms.push({
+        text: piece,
+        pageStart: page.pageNumber,
+        pageEnd: page.pageNumber,
+      });
+    }
   }
-  return chunks.filter(Boolean);
+
+  const chunks = [];
+  let buffer = null;
+
+  const pushBuffer = () => {
+    if (!buffer?.text?.trim()) return;
+    chunks.push({
+      id: `C${String(chunks.length + 1).padStart(3, '0')}`,
+      order: chunks.length + 1,
+      text: buffer.text.trim(),
+      pageStart: buffer.pageStart,
+      pageEnd: buffer.pageEnd,
+    });
+  };
+
+  for (const atom of atoms) {
+    if (!buffer) {
+      buffer = { ...atom };
+      continue;
+    }
+    const candidate = `${buffer.text}\n\n${atom.text}`;
+    if (candidate.length <= maxChars) {
+      buffer.text = candidate;
+      buffer.pageEnd = atom.pageEnd;
+      continue;
+    }
+
+    pushBuffer();
+    const overlap = overlapChars > 0 ? tailAtNaturalBoundary(buffer.text, overlapChars) : '';
+    buffer = {
+      text: overlap ? `${overlap}\n\n${atom.text}` : atom.text,
+      pageStart: overlap ? buffer.pageEnd : atom.pageStart,
+      pageEnd: atom.pageEnd,
+    };
+
+    if (buffer.text.length > maxChars) {
+      const reSplit = splitLongSegment(buffer.text, maxChars);
+      for (const piece of reSplit.slice(0, -1)) {
+        chunks.push({
+          id: `C${String(chunks.length + 1).padStart(3, '0')}`,
+          order: chunks.length + 1,
+          text: piece,
+          pageStart: buffer.pageStart,
+          pageEnd: buffer.pageEnd,
+        });
+      }
+      buffer.text = reSplit.at(-1) ?? '';
+    }
+  }
+
+  pushBuffer();
+  return chunks;
 }
 
 export function packSegments(segments, maxChars, overlapChars = 0) {
@@ -87,10 +145,21 @@ export function packSegments(segments, maxChars, overlapChars = 0) {
   return chunks;
 }
 
+function hardSplit(text, maxChars) {
+  const chunks = [];
+  for (let offset = 0; offset < text.length; offset += maxChars) {
+    chunks.push(text.slice(offset, offset + maxChars).trim());
+  }
+  return chunks.filter(Boolean);
+}
+
 function tailAtNaturalBoundary(text, maxChars) {
   if (text.length <= maxChars) return text.trim();
   const tail = text.slice(-maxChars);
-  const boundary = Math.max(tail.indexOf('。'), tail.indexOf('\n'));
+  const sentence = tail.indexOf('。');
+  const newline = tail.indexOf('\n');
+  const candidates = [sentence, newline].filter((value) => value >= 0);
+  const boundary = candidates.length ? Math.min(...candidates) : -1;
   if (boundary >= 0 && boundary < tail.length - 1) return tail.slice(boundary + 1).trim();
   return tail.trim();
 }

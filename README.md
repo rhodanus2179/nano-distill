@@ -2,41 +2,44 @@
 
 Local document distillation with Gemini Nano — recursive summarization for long-form content.
 
-`nano-distill` is a static browser application that extracts text from a PDF and recursively summarizes it with Chrome Built-in AI until it can produce a final Japanese summary of roughly 350–450 characters.
+`nano-distill` is a static browser application that extracts text from a PDF and recursively summarizes it with Chrome Built-in AI. v0.2.0 limits the amount of material consolidated in a single model call and keeps a local diagnostic trace of intermediate generations.
 
-## v0.1 scope
+## v0.2.0 highlights
 
 - Drag & drop a single text PDF
-- Extract page text with PDF.js
-- Split the extracted text into quota-safe chunks
-- Summarize chunks sequentially with the Summarizer API
-- Recursively summarize summaries when the combined text is still too large
-- Produce the final ~400-character Japanese summary with the Prompt API
-- Show progress, elapsed time, retry state, and summary hierarchy
-- Cancel an in-progress run
-- Copy the final summary
+- Extract page text locally with PDF.js
+- PDF.js is vendored with the application; no runtime CDN fetch
+- Split source text into quota-safe chunks
+- Summarize chunks sequentially with Chrome Summarizer API
+- Limit recursive fan-in to at most 5 summaries per call
+- Send at most 8 top-level summaries to the final Prompt API call
+- Measure final Japanese character count in JavaScript
+- If the final summary is over 550 characters, ask Nano to compress it by a calculated relative ratio, up to two passes
+- Never truncate the final text mechanically
+- Record intermediate summaries, parent IDs, attempts, durations, failures and final compression passes in an in-memory diagnostic log
+- Export the diagnostic log to JSON only when the user explicitly requests it
+- Cancel an in-progress run and still export the partial diagnostic log
 - Clear site-controlled browser storage from the UI
 
 ## Privacy model
 
-Document content is handled locally.
+Document content is handled locally by the application.
 
-- The selected PDF is read with the browser File API.
-- PDF bytes, extracted text, intermediate summaries, and the final summary are **not uploaded by the application**.
-- Document data is held in memory for the active page session and is discarded when the document is reset, site data is cleared, or the page is closed.
-- The **Clear local data** action clears storage that this origin can control: Local Storage, Session Storage, IndexedDB, Cache Storage, and service-worker registrations.
-- Chrome manages the Gemini Nano model separately. The app cannot and does not delete the browser-managed model.
-- PDF.js code is loaded from a pinned jsDelivr URL in v0.1. The PDF itself is passed to PDF.js as a local `ArrayBuffer`; the app contains no code that sends the PDF or extracted content to the CDN.
+- Selected PDF bytes, extracted text, intermediate summaries and the final summary are not uploaded by the application.
+- Diagnostic logs are held in memory and are not persisted automatically.
+- The diagnostic JSON may contain document-derived content; saving it is an explicit user action.
+- PDF.js is distributed locally with the app rather than fetched from a CDN at runtime.
+- Chrome manages the Gemini Nano model separately from site storage.
 
-Chrome documents that after the built-in model is downloaded, subsequent on-device use does not require a network connection and model input is not sent to Google or third parties.
+See [`docs/privacy.md`](docs/privacy.md) for the exact boundary.
 
 ## Requirements
 
-- Desktop Chrome with the Summarizer API and Prompt API available
-- A device that satisfies Chrome Built-in AI hardware/storage requirements
+- Desktop Chrome with Summarizer API and Prompt API available
+- A device satisfying Chrome Built-in AI requirements
 - A PDF containing a usable text layer
 
-OCR is not included in v0.1.
+OCR is not included in v0.2.0.
 
 ## Run locally
 
@@ -48,30 +51,37 @@ python -m http.server 8000
 
 Then open `http://localhost:8000/` in Chrome.
 
-Opening `index.html` directly with `file://` is not supported because module loading, PDF.js workers, and Built-in AI are designed for secure web origins / localhost.
+Opening `index.html` directly with `file://` is not supported.
 
 ## Architecture
 
 ```text
 PDF
  ↓
-PDF.js text extraction
+local PDF.js text extraction
  ↓
-normalization / natural-boundary chunking
+quota-safe source chunks
  ↓
-Summarizer API (Gemini Nano)
+Summarizer API
  ↓
-summary groups
+Level 1 summaries
  ↓
-recursive Summarizer API passes
+fan-in <= 5 recursive consolidation
  ↓
-Prompt API final synthesis
+<= 8 top summaries + Prompt API context check
  ↓
-350–450 character Japanese summary
+final synthesis
+ ↓
+JS character measurement
+ ↓
+relative compression only when > 550 chars
 ```
 
-The recursion depth is dynamic. A 200-page PDF can add as many intermediate levels as needed, subject to a safety cap.
+## Diagnostic log
 
-## Design
+The exported JSON records full intermediate summary output, but standard logging does not duplicate the full original Level 1 source chunks. Parent IDs and page ranges allow the summarization tree to be reconstructed while reducing duplicated sensitive content.
 
-See [`docs/design_v0.1.md`](docs/design_v0.1.md).
+Design documents:
+
+- [`docs/design_v0.2.md`](docs/design_v0.2.md)
+- [`docs/design_v0.2_diagnostic_logging.md`](docs/design_v0.2_diagnostic_logging.md)

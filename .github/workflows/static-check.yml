@@ -8,16 +8,17 @@ permissions:
   contents: read
 
 jobs:
-  syntax:
+  verify:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Check JavaScript syntax
+      - name: Verify JavaScript and unit tests
+        run: npm run verify
+      - name: Verify vendored PDF.js
         run: |
-          set -euo pipefail
-          for file in src/*.js; do
-            node --check "$file"
-          done
+          test -s vendor/pdfjs/pdf.min.mjs
+          test -s vendor/pdfjs/pdf.worker.min.mjs
+          test -s vendor/pdfjs/LICENSE
