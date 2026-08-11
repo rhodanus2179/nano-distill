@@ -40,14 +40,21 @@ export class RecursiveSummaryPipeline {
     let totalAiCalls = 0;
 
     this.callbacks.onStage?.({ stage: 'model', title: 'Gemini Nanoを準備中' });
-    this.summarizer = await createIntermediateSummarizer({
+
+    // Start both create() calls before the first await. Chrome may require
+    // transient user activation when a built-in model must be downloaded.
+    const summarizerPromise = createIntermediateSummarizer({
       onDownloadProgress: (loaded) => this.callbacks.onModelDownload?.(loaded),
     });
-
-    this.finalSession = await createFinalSession({
+    const finalSessionPromise = createFinalSession({
       signal,
       onDownloadProgress: (loaded) => this.callbacks.onModelDownload?.(loaded),
     });
+
+    [this.summarizer, this.finalSession] = await Promise.all([
+      summarizerPromise,
+      finalSessionPromise,
+    ]);
 
     signal.throwIfAborted?.();
     this.callbacks.onStage?.({ stage: 'chunk', title: '文書を分割中' });
