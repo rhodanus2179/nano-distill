@@ -56,9 +56,13 @@ export function createUi() {
     setModelDownload(value, label = 'モデルを準備中…') {
       const percent = Math.max(0, Math.min(100, Math.round(value * 100)));
       els.modelDownloadWrap.hidden = false;
-      els.modelDownloadLabel.textContent = `${label} ${percent}%`;
       els.modelDownloadProgress.value = percent;
-      if (percent >= 100) setTimeout(() => { els.modelDownloadWrap.hidden = true; }, 900);
+      if (percent >= 100) {
+        els.modelDownloadLabel.textContent = 'モデルの準備が完了しました';
+        setTimeout(() => { els.modelDownloadWrap.hidden = true; }, 1200);
+      } else {
+        els.modelDownloadLabel.textContent = `${label} ${percent}%`;
+      }
     },
     showExtracting(file) {
       els.dropZone.hidden = true;
@@ -127,7 +131,13 @@ export function createUi() {
     addLevel(level) {
       const li = document.createElement('li');
       const passthrough = level.passthroughCount ? ` / pass-through ${level.passthroughCount}` : '';
-      li.textContent = `第${level.level}層 ${level.inputCount} → ${level.outputCount}${passthrough}`;
+      if (level.level === 1) {
+        const pages = els.pageCount.textContent || '原文';
+        const chars = els.charCount.textContent || '—';
+        li.textContent = `第1層 ${pages}（${chars}字）→ ${level.outputCount}要約${passthrough}`;
+      } else {
+        li.textContent = `第${level.level}層 ${level.inputCount}要約 → ${level.outputCount}統合要約${passthrough}`;
+      }
       els.levelList.append(li);
     },
     setAttempt(info) {
