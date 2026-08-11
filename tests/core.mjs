@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { calculateCompressionRatio, classifyFinalLength } from '../src/ai.js';
+import { buildCompressionPrompt, calculateCompressionRatio, classifyFinalLength } from '../src/ai.js';
 import {
   DIAGNOSTIC_CONFIG,
   FINAL_SYSTEM_PROMPT,
@@ -85,15 +85,29 @@ test('diagnostic totals count logical calls separately from retries', () => {
   assert.equal(call.attempts.length, 2);
 });
 
-test('recursive summarizer instruction requires coverage across source summaries', () => {
+test('recursive summarizer instruction requires coverage and fidelity', () => {
   assert.match(SUMMARIZER_OPTIONS.sharedContext, /各入力要約の主要論点/);
   assert.match(SUMMARIZER_OPTIONS.sharedContext, /一部の入力だけに偏らない/);
-  assert.equal(DIAGNOSTIC_CONFIG.recursivePromptTemplateVersion, 'recursive-v3');
+  assert.match(SUMMARIZER_OPTIONS.sharedContext, /略語の意味の推測をしない/);
+  assert.match(SUMMARIZER_OPTIONS.sharedContext, /断定へ強めない/);
+  assert.equal(DIAGNOSTIC_CONFIG.intermediatePromptTemplateVersion, 'intermediate-v3');
+  assert.equal(DIAGNOSTIC_CONFIG.recursivePromptTemplateVersion, 'recursive-v4');
 });
 
-test('final prompt preserves statement type and requests plain style', () => {
+test('final prompt preserves terminology, statement type, and modality', () => {
   assert.match(FINAL_SYSTEM_PROMPT, /常体/);
   assert.match(FINAL_SYSTEM_PROMPT, /課題・制約/);
   assert.match(FINAL_SYSTEM_PROMPT, /推奨策・制度変更・結論へ言い換えてはいけません/);
-  assert.equal(DIAGNOSTIC_CONFIG.finalPromptTemplateVersion, 'final-v3');
+  assert.match(FINAL_SYSTEM_PROMPT, /略語・略称の意味を推測して補足してはいけません/);
+  assert.match(FINAL_SYSTEM_PROMPT, /断定へ強めてはいけません/);
+  assert.equal(DIAGNOSTIC_CONFIG.finalPromptTemplateVersion, 'final-v4');
+});
+
+test('compression prompt preserves qualifiers and does not expand abbreviations', () => {
+  const prompt = buildCompressionPrompt(0.59);
+  assert.match(prompt, /略語の意味を推測して補足しない/);
+  assert.match(prompt, /確実性・評価の強さ・前提条件を削らず/);
+  assert.match(prompt, /断定へ強めない/);
+  assert.match(prompt, /推奨策・制度変更・結論へ変換しない/);
+  assert.equal(DIAGNOSTIC_CONFIG.compressionPromptTemplateVersion, 'relative-compression-v2');
 });
