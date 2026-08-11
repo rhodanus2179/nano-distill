@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="description" content="Local document distillation with Gemini Nano — recursive summarization for long-form PDF content.">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; worker-src 'self' blob: https://cdn.jsdelivr.net; connect-src 'self' https://cdn.jsdelivr.net; style-src 'self'; img-src 'self' data:; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+  <title>nano-distill</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="page-shell">
+    <header class="app-header">
+      <div>
+        <p class="eyebrow">LOCAL DOCUMENT DISTILLATION</p>
+        <h1>nano-distill</h1>
+        <p class="subtitle">長いPDFを、端末内のGemini Nanoで段階的に要約します。</p>
+      </div>
+      <div class="header-actions">
+        <div class="privacy-badge" title="PDF本文と抽出テキストは外部サーバーへ送信しません。">
+          <span class="status-dot status-dot--safe" aria-hidden="true"></span>
+          文書データはローカル処理
+        </div>
+        <button id="clearDataButton" class="button button--ghost" type="button">ローカルデータを消去</button>
+      </div>
+    </header>
+
+    <main>
+      <section class="status-strip" aria-label="AI status">
+        <div>
+          <span class="label">Gemini Nano</span>
+          <span id="aiStatus" class="status-value">確認中…</span>
+        </div>
+        <div id="modelDownloadWrap" class="download-progress" hidden>
+          <span id="modelDownloadLabel">モデルを準備中…</span>
+          <progress id="modelDownloadProgress" value="0" max="100"></progress>
+        </div>
+      </section>
+
+      <section id="dropZone" class="drop-zone" tabindex="0" role="button" aria-describedby="dropHelp">
+        <input id="fileInput" type="file" accept="application/pdf,.pdf" hidden>
+        <div class="drop-icon" aria-hidden="true">PDF</div>
+        <h2>PDFをここにドロップ</h2>
+        <p id="dropHelp">またはクリックしてファイルを選択</p>
+        <p class="drop-note">テキストを含むPDFに対応。スキャン画像のみのPDFはOCR対象外です。</p>
+      </section>
+
+      <section id="documentCard" class="card" hidden>
+        <div class="card-header">
+          <div>
+            <span class="label">DOCUMENT</span>
+            <h2 id="fileName">—</h2>
+          </div>
+          <button id="changeFileButton" class="button button--ghost" type="button">別のPDF</button>
+        </div>
+        <div class="stat-grid">
+          <div class="stat"><span class="label">ページ</span><strong id="pageCount">—</strong></div>
+          <div class="stat"><span class="label">サイズ</span><strong id="fileSize">—</strong></div>
+          <div class="stat"><span class="label">抽出文字数</span><strong id="charCount">—</strong></div>
+          <div class="stat"><span class="label">空ページ</span><strong id="emptyPages">—</strong></div>
+        </div>
+        <div id="extractionWarning" class="notice notice--warning" hidden></div>
+        <div class="action-row">
+          <button id="startButton" class="button button--primary" type="button">要約を開始</button>
+          <p class="inline-note">要約中もPDF本文・中間要約はメモリ上だけで扱います。</p>
+        </div>
+      </section>
+
+      <section id="progressCard" class="card" hidden aria-live="polite">
+        <div class="card-header">
+          <div>
+            <span class="label">PROCESSING</span>
+            <h2 id="progressTitle">準備中</h2>
+          </div>
+          <button id="cancelButton" class="button button--danger" type="button">中止</button>
+        </div>
+        <progress id="progressBar" class="main-progress" value="0" max="100"></progress>
+        <div class="progress-meta">
+          <span id="progressDetail">—</span>
+          <span id="elapsedTime">00:00</span>
+        </div>
+        <ol id="levelList" class="level-list"></ol>
+        <div id="attemptInfo" class="attempt-info"></div>
+      </section>
+
+      <section id="resultCard" class="card result-card" hidden>
+        <div class="card-header">
+          <div>
+            <span class="label">FINAL SUMMARY</span>
+            <h2>要約完了</h2>
+          </div>
+          <button id="copyButton" class="button button--primary" type="button">コピー</button>
+        </div>
+        <div id="summaryText" class="summary-text"></div>
+        <div class="result-meta">
+          <span><strong id="summaryChars">0</strong>字</span>
+          <span id="resultStats">—</span>
+        </div>
+      </section>
+
+      <section class="card privacy-card">
+        <div class="card-header">
+          <div>
+            <span class="label">PRIVACY & STORAGE</span>
+            <h2>データの取扱い</h2>
+          </div>
+          <span id="storageUsage" class="storage-usage">サイト保存領域を確認中…</span>
+        </div>
+        <div class="privacy-grid">
+          <div>
+            <h3>文書データ</h3>
+            <p>PDF、抽出テキスト、中間要約、最終要約はサーバーへ送信せず、処理中のメモリ上で扱います。ページを閉じるか「別のPDF」で破棄します。</p>
+          </div>
+          <div>
+            <h3>ブラウザ保存領域</h3>
+            <p>「ローカルデータを消去」で、このサイトが操作できる Local Storage、Session Storage、IndexedDB、Cache Storage を消去できます。</p>
+          </div>
+          <div>
+            <h3>Gemini Nano</h3>
+            <p>モデルはChromeが管理します。モデル本体はサイトデータとは別管理のため、この画面からは削除しません。</p>
+          </div>
+        </div>
+        <p class="fine-print">PDF.jsのプログラム本体は固定バージョンをCDNから読み込みますが、選択したPDFや抽出内容をCDNへ送信する処理はありません。</p>
+      </section>
+    </main>
+
+    <footer>
+      <span>nano-distill v0.1.0</span>
+      <span>Desktop Chrome / Built-in AI</span>
+    </footer>
+  </div>
+
+  <dialog id="clearDataDialog">
+    <form method="dialog" class="dialog-body">
+      <h2>ローカルデータを消去しますか？</h2>
+      <p>現在読み込んでいるPDFと要約結果を破棄し、このサイトが操作できるブラウザ保存領域を消去します。</p>
+      <p class="fine-print">Chromeが管理するGemini Nanoモデル本体や通常のブラウザHTTPキャッシュは対象外です。</p>
+      <div class="dialog-actions">
+        <button value="cancel" class="button button--ghost">キャンセル</button>
+        <button id="confirmClearDataButton" value="confirm" class="button button--danger">消去する</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
