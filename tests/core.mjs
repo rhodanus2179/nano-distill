@@ -2,7 +2,12 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { calculateCompressionRatio, classifyFinalLength } from '../src/ai.js';
-import { PIPELINE_CONFIG } from '../src/config.js';
+import {
+  DIAGNOSTIC_CONFIG,
+  FINAL_SYSTEM_PROMPT,
+  PIPELINE_CONFIG,
+  SUMMARIZER_OPTIONS,
+} from '../src/config.js';
 import { createRunLog, createLevel, createAiCall, finishAiCall, recordAttempt } from '../src/diagnostics.js';
 import { canFinalize, groupSummaryNodesForQuota } from '../src/pipeline.js';
 import { createDocumentChunks } from '../src/text.js';
@@ -78,4 +83,17 @@ test('diagnostic totals count logical calls separately from retries', () => {
   assert.equal(log.totals.timeouts, 1);
   assert.equal(log.totals.aiCallsSucceeded, 1);
   assert.equal(call.attempts.length, 2);
+});
+
+test('recursive summarizer instruction requires coverage across source summaries', () => {
+  assert.match(SUMMARIZER_OPTIONS.sharedContext, /各入力要約の主要論点/);
+  assert.match(SUMMARIZER_OPTIONS.sharedContext, /一部の入力だけに偏らない/);
+  assert.equal(DIAGNOSTIC_CONFIG.recursivePromptTemplateVersion, 'recursive-v3');
+});
+
+test('final prompt preserves statement type and requests plain style', () => {
+  assert.match(FINAL_SYSTEM_PROMPT, /常体/);
+  assert.match(FINAL_SYSTEM_PROMPT, /課題・制約/);
+  assert.match(FINAL_SYSTEM_PROMPT, /推奨策・制度変更・結論へ言い換えてはいけません/);
+  assert.equal(DIAGNOSTIC_CONFIG.finalPromptTemplateVersion, 'final-v3');
 });
