@@ -87,7 +87,7 @@ The standard log intentionally does **not** duplicate the complete original sour
 npm run verify
 ```
 
-This runs JavaScript syntax checks and the Node-based core tests. GitHub Actions also verifies that the vendored PDF.js module, worker, and license files are present.
+This runs JavaScript syntax checks and 9 Node-based core tests. GitHub Actions also verifies that the vendored PDF.js module, worker, and license files are present.
 
 ## Current scope
 
