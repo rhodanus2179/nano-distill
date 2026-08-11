@@ -17,7 +17,7 @@ Local document distillation with Gemini Nano — recursive summarization for lon
 - Overlong Final output is re-compressed by a relative ratio instead of asking Gemini Nano to count Japanese characters precisely.
 - Intermediate and final generated texts can be exported as a diagnostic JSON log.
 - Diagnostic logs are not auto-persisted.
-- Recursive prompts now ask Gemini Nano to retain at least one major point from each source summary where possible, reducing bias toward only the first or most salient child summary.
+- Recursive prompts ask Gemini Nano to retain at least one major point from each source summary where possible, reducing bias toward only the first or most salient child summary.
 - Final prompts distinguish issues, causes, actions, results, and proposals so a problem statement is not silently converted into a recommendation.
 - Final output uses concise Japanese plain style (`だ・である` style) as a default, while factual fidelity takes priority over style.
 
@@ -63,6 +63,8 @@ A large document can therefore look like:
  → 7 consolidated summaries
  → Final summary
 ```
+
+The 195-page validation case completed with 43 AI calls, no retries, and no timeouts. The diagnostic log was then used to identify two quality issues—coverage loss during recursive consolidation and a Final-stage conversion of a problem statement into an unsupported recommendation—which are addressed by the `recursive-v3` and `final-v3` prompt constraints.
 
 ## Diagnostic log
 
