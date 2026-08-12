@@ -1,4 +1,5 @@
-import { countChars, formatBytes } from './text.js';
+import { PIPELINE_CONFIG } from './config.js';
+import { countChars, countParagraphs, countSentences, formatBytes } from './text.js';
 
 export function createUi() {
   const $ = (id) => document.getElementById(id);
@@ -152,10 +153,10 @@ export function createUi() {
     },
     setFinalPass(info) {
       if (info.state === 'start') {
-        if (info.type === 'relative-compression') {
-          els.attemptInfo.textContent = `最終要約を約${Math.round(info.requestedRatio * 100)}%へ再圧縮中…`;
+        if (info.type === 'sentence-reduction') {
+          els.attemptInfo.textContent = `最終要約を${info.requestedSentenceLimit ?? PIPELINE_CONFIG.finalRewriteMaxSentences}文以内に再構成中…`;
         } else {
-          els.attemptInfo.textContent = '最終要約を生成中…';
+          els.attemptInfo.textContent = '最終要約を5～7文で生成中…';
         }
       }
     },
@@ -171,15 +172,18 @@ export function createUi() {
     },
     showResult(result) {
       els.summaryText.textContent = result.finalSummary;
-      els.summaryChars.textContent = countChars(result.finalSummary).toLocaleString('ja-JP');
-      els.resultStats.textContent = `${result.initialChunkCount}初期チャンク / ${result.levels.length}階層 / Final入力 ${result.finalSourceCount}件 / AI ${result.totalAiCalls}回`;
+      const characters = countChars(result.finalSummary);
+      const sentences = countSentences(result.finalSummary);
+      const paragraphs = countParagraphs(result.finalSummary);
+      els.summaryChars.textContent = characters.toLocaleString('ja-JP');
+      els.resultStats.textContent = `${sentences}文 / ${paragraphs}段落 / ${result.initialChunkCount}初期チャンク / ${result.levels.length}階層 / Final入力 ${result.finalSourceCount}件 / AI ${result.totalAiCalls}回`;
       els.lengthStatus.textContent = lengthStatusLabel(result.finalLengthStatus);
       els.lengthStatus.dataset.status = result.finalLengthStatus;
       els.lengthHistory.replaceChildren();
       for (const item of result.finalLengthHistory) {
         const li = document.createElement('li');
-        const ratio = item.requestedRatio ? ` / 約${Math.round(item.requestedRatio * 100)}%指定` : '';
-        li.textContent = `pass ${item.pass}: ${item.characters}字${ratio}`;
+        const structure = item.pass > 0 ? ` / ${PIPELINE_CONFIG.finalRewriteMaxSentences}文以内指定` : ' / 5～7文指定';
+        li.textContent = `pass ${item.pass}: ${item.characters}字${structure}`;
         els.lengthHistory.append(li);
       }
       els.resultCard.hidden = false;

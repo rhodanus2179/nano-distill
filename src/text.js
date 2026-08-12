@@ -168,6 +168,19 @@ export function countChars(text) {
   return Array.from(String(text ?? '')).length;
 }
 
+export function countSentences(text) {
+  const normalized = normalizeText(text);
+  if (!normalized) return 0;
+  const matches = normalized.match(/[^。！？!?]+(?:[。！？!?]+|$)/gu) ?? [];
+  return matches.filter((part) => part.trim()).length;
+}
+
+export function countParagraphs(text) {
+  const normalized = normalizeText(text);
+  if (!normalized) return 0;
+  return normalized.split(/\n{2,}/).filter((part) => part.trim()).length;
+}
+
 export function formatBytes(bytes) {
   if (!Number.isFinite(bytes) || bytes < 0) return '—';
   const units = ['B', 'KB', 'MB', 'GB'];

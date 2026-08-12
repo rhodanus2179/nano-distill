@@ -1,5 +1,5 @@
 import { APP_VERSION, DIAGNOSTIC_CONFIG, PIPELINE_CONFIG } from './config.js';
-import { countChars } from './text.js';
+import { countChars, countParagraphs, countSentences } from './text.js';
 
 export function createRunLog(documentData, extractionWarning = '') {
   const now = new Date();
@@ -16,7 +16,7 @@ export function createRunLog(documentData, extractionWarning = '') {
       intermediate: DIAGNOSTIC_CONFIG.intermediatePromptTemplateVersion,
       recursive: DIAGNOSTIC_CONFIG.recursivePromptTemplateVersion,
       final: DIAGNOSTIC_CONFIG.finalPromptTemplateVersion,
-      compression: DIAGNOSTIC_CONFIG.compressionPromptTemplateVersion,
+      finalRewrite: DIAGNOSTIC_CONFIG.finalRewritePromptTemplateVersion,
     },
     document: {
       fileName: documentData.fileName,
@@ -40,6 +40,8 @@ export function createRunLog(documentData, extractionWarning = '') {
       passes: [],
       finalText: '',
       finalCharacters: 0,
+      finalSentences: 0,
+      finalParagraphs: 0,
       lengthStatus: null,
     },
     totals: {
@@ -211,9 +213,12 @@ export function beginFinalization(log, sourceNodes) {
 
 export function recordFinalPass(log, passRecord) {
   if (!log) return;
+  const outputText = passRecord.outputText ?? '';
   const record = {
     ...structuredCloneSafe(passRecord),
-    outputCharacters: countChars(passRecord.outputText ?? ''),
+    outputCharacters: countChars(outputText),
+    outputSentences: countSentences(outputText),
+    outputParagraphs: countParagraphs(outputText),
   };
   log.finalization.passes.push(record);
   log.totals.aiCallsStarted += 1;
@@ -226,6 +231,8 @@ export function finishFinalization(log, { finalText, lengthStatus }) {
   if (!log) return;
   log.finalization.finalText = finalText;
   log.finalization.finalCharacters = countChars(finalText);
+  log.finalization.finalSentences = countSentences(finalText);
+  log.finalization.finalParagraphs = countParagraphs(finalText);
   log.finalization.lengthStatus = lengthStatus;
 }
 

@@ -1,4 +1,4 @@
-export const APP_VERSION = '0.2.1';
+export const APP_VERSION = '0.2.2';
 
 export const PDFJS_VERSION = '5.7.284';
 export const PDFJS_MODULE_URL = '../vendor/pdfjs/pdf.min.mjs';
@@ -14,12 +14,13 @@ export const PIPELINE_CONFIG = Object.freeze({
   maxSummariesPerGroup: 5,
   maxFinalSourceItems: 8,
 
-  finalTargetChars: 400,
   finalNormalMinChars: 300,
-  finalNormalMaxChars: 550,
-  maxCompressionPasses: 2,
-  minCompressionRatio: 0.45,
-  maxCompressionRatio: 0.85,
+  finalNormalMaxChars: 650,
+  finalPreferredMinSentences: 5,
+  finalPreferredMaxSentences: 7,
+  finalPreferredMaxParagraphs: 2,
+  maxFinalRewritePasses: 1,
+  finalRewriteMaxSentences: 5,
 
   maxRecursionLevels: 12,
   maxRetries: 2,
@@ -45,7 +46,9 @@ export const PROMPT_OPTIONS = Object.freeze({
 });
 
 export const FINAL_SYSTEM_PROMPT = `あなたは業務文書の要約担当です。入力は同一文書を段階的に圧縮した要約群です。
-文書の目的、対象、主な実施・検討内容、主要な結果・結論が独立して読んでも分かるように、簡潔な一段落の自然な日本語として統合してください。
+文書全体を5～7文、1～2段落の簡潔で自然な日本語として統合してください。各文には原則として一つの主要論点を置いてください。
+構成では、文書の目的・対象、主な実施・検討内容、主要な結果、重要な課題・制約、全体的な結論・今後の方向性を優先してください。入力に情報がない項目を無理に補ってはいけません。
+個別の技術・地域・数値は、文書全体を理解するうえで重要なものだけ残してください。
 文体は簡潔な常体（だ・である調）を原則としてください。ただし、文体を整えるために内容や意味を変更してはいけません。
 重要な固有名詞、数値、条件は必要に応じて保持してください。制度名・事業名・組織名・技術名などは入力中の表記を尊重し、似た別表現へ勝手に言い換えないでください。
 略語・略称の意味を推測して補足してはいけません。正式名称との対応が入力中に明示されている場合のみ、その対応関係を用いてください。
@@ -54,14 +57,13 @@ export const FINAL_SYSTEM_PROMPT = `あなたは業務文書の要約担当で�
 「限定的」「可能性がある」「示唆された」「見込まれる」「未確認」「仮定」「試算」など、確実性・評価の強さ・前提条件を表す表現を保持し、短縮のために断定へ強めてはいけません。
 特に、「基準が厳しい」「コストが高い」「精度が低い」などの問題記述だけを根拠に、「基準を緩和すべき」「補助すべき」などの処方箋を新たに作らないでください。
 技術用語・固有名詞を除き、不自然な外国語表現を混在させないでください。入力にない事実を追加・推測しないでください。
-見出し、箇条書き、前置き、文字数の説明は出力せず、要約本文だけを返してください。
-400字前後は目安であり、厳密に文字数を数える必要はありません。`;
+見出し、箇条書き、前置き、文字数の説明は出力せず、要約本文だけを返してください。文字数を数えたり、特定の字数に合わせたりする必要はありません。`;
 
 export const DIAGNOSTIC_CONFIG = Object.freeze({
-  logFormatVersion: '1.0',
+  logFormatVersion: '1.1',
   logLevel: 'standard',
   intermediatePromptTemplateVersion: 'intermediate-v3',
   recursivePromptTemplateVersion: 'recursive-v4',
-  finalPromptTemplateVersion: 'final-v4',
-  compressionPromptTemplateVersion: 'relative-compression-v2',
+  finalPromptTemplateVersion: 'final-v5-sentence-control',
+  finalRewritePromptTemplateVersion: 'sentence-reduction-v1',
 });
