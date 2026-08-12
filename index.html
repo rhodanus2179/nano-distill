@@ -5,8 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
   <meta name="description" content="Local document distillation with Gemini Nano — recursive summarization for long-form PDF content.">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; worker-src 'self' blob: https://cdn.jsdelivr.net; connect-src 'self' https://cdn.jsdelivr.net; style-src 'self'; img-src 'self' data:; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; worker-src 'self' blob:; connect-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
   <title>nano-distill</title>
+  <link rel="icon" href="data:,">
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
@@ -18,7 +19,7 @@
         <p class="subtitle">長いPDFを、端末内のGemini Nanoで段階的に要約します。</p>
       </div>
       <div class="header-actions">
-        <div class="privacy-badge" title="PDF本文と抽出テキストは外部サーバーへ送信しません。">
+        <div class="privacy-badge" title="PDF本文と抽出テキストはアプリから外部サービスへ送信しません。">
           <span class="status-dot status-dot--safe" aria-hidden="true"></span>
           文書データはローカル処理
         </div>
@@ -63,7 +64,7 @@
         <div id="extractionWarning" class="notice notice--warning" hidden></div>
         <div class="action-row">
           <button id="startButton" class="button button--primary" type="button">要約を開始</button>
-          <p class="inline-note">要約中もPDF本文・中間要約はメモリ上だけで扱います。</p>
+          <p class="inline-note">PDF本文・中間要約・診断ログは自動保存しません。</p>
         </div>
       </section>
 
@@ -73,7 +74,10 @@
             <span class="label">PROCESSING</span>
             <h2 id="progressTitle">準備中</h2>
           </div>
-          <button id="cancelButton" class="button button--danger" type="button">中止</button>
+          <div class="button-group">
+            <button id="saveLogButton" class="button button--ghost" type="button" disabled>診断ログJSONを保存</button>
+            <button id="cancelButton" class="button button--danger" type="button">中止</button>
+          </div>
         </div>
         <progress id="progressBar" class="main-progress" value="0" max="100"></progress>
         <div class="progress-meta">
@@ -82,6 +86,7 @@
         </div>
         <ol id="levelList" class="level-list"></ol>
         <div id="attemptInfo" class="attempt-info"></div>
+        <p id="logWarning" class="fine-print warning-text" hidden>※ 診断ログには中間要約など文書内容が含まれます。保存先はこの端末です。</p>
       </section>
 
       <section id="resultCard" class="card result-card" hidden>
@@ -95,8 +100,13 @@
         <div id="summaryText" class="summary-text"></div>
         <div class="result-meta">
           <span><strong id="summaryChars">0</strong>字</span>
+          <span id="lengthStatus" class="length-status">—</span>
           <span id="resultStats">—</span>
         </div>
+        <details class="length-details">
+          <summary>最終要約の構成調整</summary>
+          <ol id="lengthHistory" class="length-history"></ol>
+        </details>
       </section>
 
       <section class="card privacy-card">
@@ -110,23 +120,30 @@
         <div class="privacy-grid">
           <div>
             <h3>文書データ</h3>
-            <p>PDF、抽出テキスト、中間要約、最終要約はサーバーへ送信せず、処理中のメモリ上で扱います。ページを閉じるか「別のPDF」で破棄します。</p>
+            <p>PDF、抽出テキスト、中間要約、最終要約はアプリから外部サービスへ送信せず、処理中のメモリ上で扱います。</p>
+          </div>
+          <div>
+            <h3>診断ログ</h3>
+            <p>中間生成結果をメモリ上に記録します。自動保存せず、「診断ログJSONを保存」を押した場合だけ端末へ書き出します。</p>
           </div>
           <div>
             <h3>ブラウザ保存領域</h3>
-            <p>「ローカルデータを消去」で、このサイトが操作できる Local Storage、Session Storage、IndexedDB、Cache Storage を消去できます。</p>
+            <p>「ローカルデータを消去」で Local Storage、Session Storage、IndexedDB、Cache Storage、Service Worker登録を消去できます。</p>
+          </div>
+          <div>
+            <h3>PDF.js</h3>
+            <p>PDF.jsはアプリと一緒に配布し、実行時にCDNから取得しません。</p>
           </div>
           <div>
             <h3>Gemini Nano</h3>
             <p>モデルはChromeが管理します。モデル本体はサイトデータとは別管理のため、この画面からは削除しません。</p>
           </div>
         </div>
-        <p class="fine-print">PDF.jsのプログラム本体は固定バージョンをCDNから読み込みますが、選択したPDFや抽出内容をCDNへ送信する処理はありません。</p>
       </section>
     </main>
 
     <footer>
-      <span>nano-distill v0.1.0</span>
+      <span>nano-distill v0.2.2</span>
       <span>Desktop Chrome / Built-in AI</span>
     </footer>
   </div>
@@ -134,11 +151,11 @@
   <dialog id="clearDataDialog">
     <form method="dialog" class="dialog-body">
       <h2>ローカルデータを消去しますか？</h2>
-      <p>現在読み込んでいるPDFと要約結果を破棄し、このサイトが操作できるブラウザ保存領域を消去します。</p>
+      <p>現在読み込んでいるPDF、要約結果、メモリ上の診断ログを破棄し、このサイトが操作できるブラウザ保存領域を消去します。</p>
       <p class="fine-print">Chromeが管理するGemini Nanoモデル本体や通常のブラウザHTTPキャッシュは対象外です。</p>
       <div class="dialog-actions">
         <button value="cancel" class="button button--ghost">キャンセル</button>
-        <button id="confirmClearDataButton" value="confirm" class="button button--danger">消去する</button>
+        <button value="confirm" class="button button--danger">消去する</button>
       </div>
     </form>
   </dialog>

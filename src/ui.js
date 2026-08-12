@@ -1,4 +1,5 @@
-import { countChars, formatBytes } from './text.js';
+import { PIPELINE_CONFIG } from './config.js';
+import { countChars, countParagraphs, countSentences, formatBytes } from './text.js';
 
 export function createUi() {
   const $ = (id) => document.getElementById(id);
@@ -26,14 +27,17 @@ export function createUi() {
     levelList: $('levelList'),
     attemptInfo: $('attemptInfo'),
     cancelButton: $('cancelButton'),
+    saveLogButton: $('saveLogButton'),
+    logWarning: $('logWarning'),
     resultCard: $('resultCard'),
     summaryText: $('summaryText'),
     summaryChars: $('summaryChars'),
     resultStats: $('resultStats'),
+    lengthStatus: $('lengthStatus'),
+    lengthHistory: $('lengthHistory'),
     copyButton: $('copyButton'),
     clearDataButton: $('clearDataButton'),
     clearDataDialog: $('clearDataDialog'),
-    confirmClearDataButton: $('confirmClearDataButton'),
     storageUsage: $('storageUsage'),
   };
 
@@ -53,9 +57,13 @@ export function createUi() {
     setModelDownload(value, label = 'モデルを準備中…') {
       const percent = Math.max(0, Math.min(100, Math.round(value * 100)));
       els.modelDownloadWrap.hidden = false;
-      els.modelDownloadLabel.textContent = `${label} ${percent}%`;
       els.modelDownloadProgress.value = percent;
-      if (percent >= 100) setTimeout(() => { els.modelDownloadWrap.hidden = true; }, 900);
+      if (percent >= 100) {
+        els.modelDownloadLabel.textContent = 'モデルの準備が完了しました';
+        setTimeout(() => { els.modelDownloadWrap.hidden = true; }, 1200);
+      } else {
+        els.modelDownloadLabel.textContent = `${label} ${percent}%`;
+      }
     },
     showExtracting(file) {
       els.dropZone.hidden = true;
@@ -67,6 +75,7 @@ export function createUi() {
       els.emptyPages.textContent = '—';
       els.startButton.disabled = true;
       els.resultCard.hidden = true;
+      els.progressCard.hidden = true;
       els.extractionWarning.hidden = true;
     },
     updateExtractionProgress(pageNumber, pageCount) {
@@ -95,6 +104,8 @@ export function createUi() {
       els.levelList.replaceChildren();
       els.attemptInfo.textContent = '';
       els.progressBar.value = 0;
+      els.saveLogButton.disabled = true;
+      els.logWarning.hidden = true;
     },
     beginProcessing() {
       els.progressCard.hidden = false;
@@ -103,6 +114,8 @@ export function createUi() {
       els.changeFileButton.disabled = true;
       els.progressBar.value = 0;
       els.levelList.replaceChildren();
+      els.attemptInfo.textContent = '';
+      els.lengthHistory.replaceChildren();
     },
     endProcessing() {
       els.startButton.disabled = false;
@@ -116,19 +129,35 @@ export function createUi() {
       els.progressBar.value = percent;
       els.progressDetail.textContent = `第${level}層：${Math.min(index + 1, total)} / ${total}`;
     },
-    addLevel({ level, inputCount, outputCount }) {
+    addLevel(level) {
       const li = document.createElement('li');
-      li.textContent = `第${level}層 ${inputCount} → ${outputCount}`;
+      const passthrough = level.passthroughCount ? ` / pass-through ${level.passthroughCount}` : '';
+      if (level.level === 1) {
+        const pages = els.pageCount.textContent || '原文';
+        const chars = els.charCount.textContent || '—';
+        li.textContent = `第1層 ${pages}（${chars}字）→ ${level.outputCount}要約${passthrough}`;
+      } else {
+        li.textContent = `第${level.level}層 ${level.inputCount}要約 → ${level.outputCount}統合要約${passthrough}`;
+      }
       els.levelList.append(li);
     },
     setAttempt(info) {
       if (info.state === 'start') {
-        const target = info.phase === 'final' ? '最終要約' : `第${info.level}層 ${info.index + 1}/${info.total}`;
+        const target = `第${info.level}層 ${info.index + 1}/${info.total}`;
         els.attemptInfo.textContent = `${target} — attempt ${info.attempt}`;
       } else if (info.state === 'timeout') {
-        els.attemptInfo.textContent = `タイムアウト。再試行します…`;
+        els.attemptInfo.textContent = 'タイムアウト。再試行します…';
       } else if (info.state === 'error') {
-        els.attemptInfo.textContent = `一時的なエラー。再試行します…`;
+        els.attemptInfo.textContent = '一時的なエラー。再試行します…';
+      }
+    },
+    setFinalPass(info) {
+      if (info.state === 'start') {
+        if (info.type === 'sentence-reduction') {
+          els.attemptInfo.textContent = `最終要約を${info.requestedSentenceLimit ?? PIPELINE_CONFIG.finalRewriteMaxSentences}文以内に再構成中…`;
+        } else {
+          els.attemptInfo.textContent = '最終要約を5～7文で生成中…';
+        }
       }
     },
     setElapsed(ms) {
@@ -137,10 +166,26 @@ export function createUi() {
       const seconds = totalSeconds % 60;
       els.elapsedTime.textContent = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
     },
+    setLogAvailable(available) {
+      els.saveLogButton.disabled = !available;
+      els.logWarning.hidden = !available;
+    },
     showResult(result) {
       els.summaryText.textContent = result.finalSummary;
-      els.summaryChars.textContent = countChars(result.finalSummary).toLocaleString('ja-JP');
-      els.resultStats.textContent = `${result.initialChunkCount}初期チャンク / ${result.levels.length}階層 / AI ${result.totalAiCalls}回`;
+      const characters = countChars(result.finalSummary);
+      const sentences = countSentences(result.finalSummary);
+      const paragraphs = countParagraphs(result.finalSummary);
+      els.summaryChars.textContent = characters.toLocaleString('ja-JP');
+      els.resultStats.textContent = `${sentences}文 / ${paragraphs}段落 / ${result.initialChunkCount}初期チャンク / ${result.levels.length}階層 / Final入力 ${result.finalSourceCount}件 / AI ${result.totalAiCalls}回`;
+      els.lengthStatus.textContent = lengthStatusLabel(result.finalLengthStatus);
+      els.lengthStatus.dataset.status = result.finalLengthStatus;
+      els.lengthHistory.replaceChildren();
+      for (const item of result.finalLengthHistory) {
+        const li = document.createElement('li');
+        const structure = item.pass > 0 ? ` / ${PIPELINE_CONFIG.finalRewriteMaxSentences}文以内指定` : ' / 5～7文指定';
+        li.textContent = `pass ${item.pass}: ${item.characters}字${structure}`;
+        els.lengthHistory.append(li);
+      }
       els.resultCard.hidden = false;
       els.progressBar.value = 100;
       els.progressDetail.textContent = '完了';
@@ -155,4 +200,10 @@ export function createUi() {
       els.storageUsage.textContent = text;
     },
   };
+}
+
+function lengthStatusLabel(status) {
+  if (status === 'short') return '短めの要約です';
+  if (status === 'long') return '目安より長めの要約です';
+  return '目標範囲';
 }

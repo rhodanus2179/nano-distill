@@ -1,9 +1,11 @@
 {
   "name": "nano-distill",
-  "version": "0.1.0",
+  "version": "0.2.2",
   "private": true,
   "type": "module",
   "scripts": {
-    "check": "for file in src/*.js; do node --check \"$file\" || exit 1; done"
+    "check": "for file in src/*.js tests/*.mjs; do node --check \"$file\" || exit 1; done",
+    "test": "node --test tests/*.mjs",
+    "verify": "npm run check && npm test"
   }
 }

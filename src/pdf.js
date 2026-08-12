@@ -5,8 +5,10 @@ let pdfjsPromise;
 
 async function getPdfJs() {
   if (!pdfjsPromise) {
-    pdfjsPromise = import(PDFJS_MODULE_URL).then((pdfjsLib) => {
-      pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER_URL;
+    const moduleUrl = new URL(PDFJS_MODULE_URL, import.meta.url).href;
+    const workerUrl = new URL(PDFJS_WORKER_URL, import.meta.url).href;
+    pdfjsPromise = import(moduleUrl).then((pdfjsLib) => {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
       return pdfjsLib;
     });
   }
@@ -29,24 +31,27 @@ export async function extractPdfText(file, { signal, onProgress } = {}) {
   try {
     pdf = await loadingTask.promise;
     const pages = [];
-    let emptyPageCount = 0;
+    const emptyPageNumbers = [];
 
     for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
       signal?.throwIfAborted?.();
       const page = await pdf.getPage(pageNumber);
       const textContent = await page.getTextContent();
       const text = normalizeText(textItemsToText(textContent.items));
-      if (!text) emptyPageCount += 1;
+      if (!text) emptyPageNumbers.push(pageNumber);
       pages.push({ pageNumber, text });
       page.cleanup?.();
       onProgress?.({ pageNumber, pageCount: pdf.numPages });
+      if (pageNumber % 8 === 0) await new Promise((resolve) => setTimeout(resolve, 0));
     }
 
     return {
       fileName: file.name,
       fileSize: file.size,
       pageCount: pdf.numPages,
-      emptyPageCount,
+      emptyPageCount: emptyPageNumbers.length,
+      emptyPageNumbers,
+      extractedPageCount: pdf.numPages - emptyPageNumbers.length,
       pages,
       charCount: pages.reduce((sum, page) => sum + page.text.length, 0),
     };
@@ -82,10 +87,8 @@ function textItemsToText(items) {
 
 function shouldInsertSpace(left, right) {
   if (!left || !right) return false;
-  const leftLast = left.at(-1);
-  const rightFirst = right[0];
   const asciiWord = /[A-Za-z0-9]/;
-  return asciiWord.test(leftLast) && asciiWord.test(rightFirst);
+  return asciiWord.test(left.at(-1)) && asciiWord.test(right[0]);
 }
 
 function assertPdfFile(file) {

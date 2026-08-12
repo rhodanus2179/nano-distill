@@ -2,76 +2,115 @@
 
 Local document distillation with Gemini Nano — recursive summarization for long-form content.
 
-`nano-distill` is a static browser application that extracts text from a PDF and recursively summarizes it with Chrome Built-in AI until it can produce a final Japanese summary of roughly 350–450 characters.
+`nano-distill` is a browser-local PDF summarizer for Chrome Built-in AI. It extracts PDF text with a vendored copy of PDF.js, summarizes long documents in recursive layers with the Summarizer API, and produces a final compact summary with the Prompt API.
 
-## v0.1 scope
+## v0.2 highlights
 
-- Drag & drop a single text PDF
-- Extract page text with PDF.js
-- Split the extracted text into quota-safe chunks
-- Summarize chunks sequentially with the Summarizer API
-- Recursively summarize summaries when the combined text is still too large
-- Produce the final ~400-character Japanese summary with the Prompt API
-- Show progress, elapsed time, retry state, and summary hierarchy
-- Cancel an in-progress run
-- Copy the final summary
-- Clear site-controlled browser storage from the UI
+- Static HTML/CSS/JavaScript app; no backend is required.
+- PDF text extraction uses the repository-bundled PDF.js 5.7.284 instead of a runtime CDN dependency.
+- Initial document chunks are summarized sequentially with Gemini Nano.
+- Recursive consolidation uses a maximum fan-in of 5 summaries per group.
+- Finalization starts only when both conditions are satisfied:
+  - the number of source summaries is 8 or fewer; and
+  - the Prompt API context check says the input fits safely.
+- Final length is measured deterministically in JavaScript.
+- Overlong Final output is re-compressed by a relative ratio instead of asking Gemini Nano to count Japanese characters precisely.
+- Intermediate and final generated texts can be exported as a diagnostic JSON log.
+- Diagnostic logs are not auto-persisted.
+- Recursive prompts ask Gemini Nano to retain at least one major point from each source summary where possible, reducing bias toward only the first or most salient child summary.
+- Final prompts distinguish issues, causes, actions, results, and proposals so a problem statement is not silently converted into a recommendation.
+- Final output uses concise Japanese plain style (`だ・である` style) as a default, while factual fidelity takes priority over style.
 
-## Privacy model
+## Privacy and local processing
 
-Document content is handled locally.
+PDF bytes, extracted text, chunks, intermediate summaries, final summaries, and diagnostic state stay in the browser during processing. The app does not provide an application backend or cloud-LLM fallback.
 
-- The selected PDF is read with the browser File API.
-- PDF bytes, extracted text, intermediate summaries, and the final summary are **not uploaded by the application**.
-- Document data is held in memory for the active page session and is discarded when the document is reset, site data is cleared, or the page is closed.
-- The **Clear local data** action clears storage that this origin can control: Local Storage, Session Storage, IndexedDB, Cache Storage, and service-worker registrations.
-- Chrome manages the Gemini Nano model separately. The app cannot and does not delete the browser-managed model.
-- PDF.js code is loaded from a pinned jsDelivr URL in v0.1. The PDF itself is passed to PDF.js as a local `ArrayBuffer`; the app contains no code that sends the PDF or extracted content to the CDN.
+Diagnostic logs remain in memory unless the user explicitly chooses **診断ログJSONを保存**. The exported JSON contains document-derived intermediate summaries and should therefore be handled as document content.
 
-Chrome documents that after the built-in model is downloaded, subsequent on-device use does not require a network connection and model input is not sent to Google or third parties.
+The **ローカルデータを消去** action clears browser-accessible site data such as Local Storage, Session Storage, IndexedDB, Cache Storage, and Service Worker registrations. The Gemini Nano model itself is managed by Chrome and is outside the site's deletion scope.
 
-## Requirements
+See [`docs/privacy.md`](docs/privacy.md) for details.
 
-- Desktop Chrome with the Summarizer API and Prompt API available
-- A device that satisfies Chrome Built-in AI hardware/storage requirements
-- A PDF containing a usable text layer
-
-OCR is not included in v0.1.
-
-## Run locally
-
-Serve the repository with any static HTTP server. For example:
-
-```bash
-python -m http.server 8000
-```
-
-Then open `http://localhost:8000/` in Chrome.
-
-Opening `index.html` directly with `file://` is not supported because module loading, PDF.js workers, and Built-in AI are designed for secure web origins / localhost.
-
-## Architecture
+## Processing flow
 
 ```text
 PDF
  ↓
 PDF.js text extraction
  ↓
-normalization / natural-boundary chunking
+page-aware text chunks
  ↓
-Summarizer API (Gemini Nano)
+Level 1 summaries
  ↓
-summary groups
+groups of up to 5 summaries
  ↓
-recursive Summarizer API passes
+recursive consolidation as needed
  ↓
-Prompt API final synthesis
+Final input of up to 8 summaries
  ↓
-350–450 character Japanese summary
+Prompt API final summary
+ ↓
+JavaScript length check
+ ↓
+relative re-compression only when needed
 ```
 
-The recursion depth is dynamic. A 200-page PDF can add as many intermediate levels as needed, subject to a safety cap.
+A large document can therefore look like:
 
-## Design
+```text
+195 pages / 176,077 characters
+ → 35 Level-1 summaries
+ → 7 consolidated summaries
+ → Final summary
+```
 
-See [`docs/design_v0.1.md`](docs/design_v0.1.md).
+The 195-page validation case completed with 43 AI calls, no retries, and no timeouts. The diagnostic log was then used to identify two quality issues—coverage loss during recursive consolidation and a Final-stage conversion of a problem statement into an unsupported recommendation—which are addressed by the `recursive-v3` and `final-v3` prompt constraints.
+
+## Diagnostic log
+
+The standard diagnostic log records enough information to trace where document information may have been lost or transformed:
+
+- document metadata
+- initial chunk IDs and page ranges
+- each intermediate generated summary
+- parent/source IDs for recursive summaries
+- measured input usage and quota where available
+- attempt number, duration, timeout/error state
+- Final generation and relative-compression passes
+- final character count and run totals
+
+The standard log intentionally does **not** duplicate the complete original source text for every Level-1 chunk.
+
+## Development checks
+
+```bash
+npm run verify
+```
+
+This runs JavaScript syntax checks and 9 Node-based core tests. GitHub Actions also verifies that the vendored PDF.js module, worker, and license files are present.
+
+## Current scope
+
+Supported in v0.2:
+
+- one text-based PDF at a time
+- mostly Japanese business, technical, research, and administrative documents
+- local browser summarization with Chrome Built-in AI
+- recursive summarization
+- diagnostic JSON export
+
+Not yet included:
+
+- OCR for scanned PDFs
+- Word / PowerPoint / Excel input
+- batch processing
+- tags or structured project fields
+- database integration
+- RAG or document search
+
+## Documents
+
+- [`docs/design_v0.1.md`](docs/design_v0.1.md)
+- [`docs/design_v0.2.md`](docs/design_v0.2.md)
+- [`docs/design_v0.2_diagnostic_logging.md`](docs/design_v0.2_diagnostic_logging.md)
+- [`docs/privacy.md`](docs/privacy.md)
