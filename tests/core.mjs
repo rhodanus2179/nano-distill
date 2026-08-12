@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { buildCompressionPrompt, calculateCompressionRatio, classifyFinalLength } from '../src/ai.js';
+import {
+  buildSentenceReductionPrompt,
+  classifyFinalLength,
+  needsFinalRewrite,
+} from '../src/ai.js';
 import {
   DIAGNOSTIC_CONFIG,
   FINAL_SYSTEM_PROMPT,
@@ -10,7 +14,7 @@ import {
 } from '../src/config.js';
 import { createRunLog, createLevel, createAiCall, finishAiCall, recordAttempt } from '../src/diagnostics.js';
 import { canFinalize, groupSummaryNodesForQuota } from '../src/pipeline.js';
-import { createDocumentChunks } from '../src/text.js';
+import { countParagraphs, countSentences, createDocumentChunks } from '../src/text.js';
 
 test('34 summaries are grouped into seven groups with fan-in <= 5', async () => {
   const nodes = Array.from({ length: 34 }, (_, index) => ({ id: `N${index + 1}`, text: `summary-${index + 1}` }));
@@ -40,16 +44,24 @@ test('finalization requires both source count and context fit', async () => {
   assert.equal(await canFinalize(session, nine), false);
 });
 
-test('relative compression ratio for 731 chars is about 55 percent', () => {
-  const ratio = calculateCompressionRatio(731);
-  assert.ok(ratio > 0.54 && ratio < 0.56);
-});
-
 test('final length classification uses deterministic JS boundaries', () => {
   assert.equal(classifyFinalLength('a'.repeat(299)), 'short');
   assert.equal(classifyFinalLength('a'.repeat(300)), 'normal');
-  assert.equal(classifyFinalLength('a'.repeat(550)), 'normal');
-  assert.equal(classifyFinalLength('a'.repeat(551)), 'long');
+  assert.equal(classifyFinalLength('a'.repeat(650)), 'normal');
+  assert.equal(classifyFinalLength('a'.repeat(651)), 'long');
+});
+
+test('sentence and paragraph counters measure Japanese final structure', () => {
+  const text = '第一文である。第二文である。\n\n第三文である。第四文である。第五文である。';
+  assert.equal(countSentences(text), 5);
+  assert.equal(countParagraphs(text), 2);
+});
+
+test('final rewrite is triggered by excessive length, sentences, or paragraphs', () => {
+  assert.equal(needsFinalRewrite('a'.repeat(651)), true);
+  assert.equal(needsFinalRewrite('一。二。三。四。五。六。七。八。'), true);
+  assert.equal(needsFinalRewrite('一。\n\n二。\n\n三。'), true);
+  assert.equal(needsFinalRewrite('一。二。三。四。五。'), false);
 });
 
 test('document chunk metadata retains page range', () => {
@@ -94,20 +106,25 @@ test('recursive summarizer instruction requires coverage and fidelity', () => {
   assert.equal(DIAGNOSTIC_CONFIG.recursivePromptTemplateVersion, 'recursive-v4');
 });
 
-test('final prompt preserves terminology, statement type, and modality', () => {
+test('final prompt uses sentence structure while preserving fidelity', () => {
+  assert.match(FINAL_SYSTEM_PROMPT, /5～7文/);
+  assert.match(FINAL_SYSTEM_PROMPT, /1～2段落/);
+  assert.match(FINAL_SYSTEM_PROMPT, /各文には原則として一つの主要論点/);
   assert.match(FINAL_SYSTEM_PROMPT, /常体/);
-  assert.match(FINAL_SYSTEM_PROMPT, /課題・制約/);
-  assert.match(FINAL_SYSTEM_PROMPT, /推奨策・制度変更・結論へ言い換えてはいけません/);
   assert.match(FINAL_SYSTEM_PROMPT, /略語・略称の意味を推測して補足してはいけません/);
   assert.match(FINAL_SYSTEM_PROMPT, /断定へ強めてはいけません/);
-  assert.equal(DIAGNOSTIC_CONFIG.finalPromptTemplateVersion, 'final-v4');
+  assert.match(FINAL_SYSTEM_PROMPT, /特定の字数に合わせたりする必要はありません/);
+  assert.equal(DIAGNOSTIC_CONFIG.finalPromptTemplateVersion, 'final-v5-sentence-control');
 });
 
-test('compression prompt preserves qualifiers and does not expand abbreviations', () => {
-  const prompt = buildCompressionPrompt(0.59);
+test('sentence reduction prompt preserves qualifiers without percentage instructions', () => {
+  const prompt = buildSentenceReductionPrompt(5);
+  assert.match(prompt, /5文以内/);
+  assert.match(prompt, /1段落/);
   assert.match(prompt, /略語の意味を推測して補足しない/);
   assert.match(prompt, /確実性・評価の強さ・前提条件を削らず/);
   assert.match(prompt, /断定へ強めない/);
-  assert.match(prompt, /推奨策・制度変更・結論へ変換しない/);
-  assert.equal(DIAGNOSTIC_CONFIG.compressionPromptTemplateVersion, 'relative-compression-v2');
+  assert.match(prompt, /文字数や圧縮率を数える必要はありません/);
+  assert.doesNotMatch(prompt, /%/);
+  assert.equal(DIAGNOSTIC_CONFIG.finalRewritePromptTemplateVersion, 'sentence-reduction-v1');
 });
